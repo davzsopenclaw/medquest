@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "parse-pyp": "npx tsx scripts/parse-pyp.ts",
+    "generate": "npx tsx scripts/generate-questions.ts",
+    "parse-all": "npx tsx scripts/parse-pyp.ts --file all",
+    "generate-all": "npx tsx scripts/generate-questions.ts --system all --count 20"
+  }
+}
