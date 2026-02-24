@@ -1,12 +1,14 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
+// Public keys — safe to commit (RLS protects the data)
+const SUPABASE_URL = 'https://eplncscjtsxfvzjrvitj.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_7_hp7tpONaB-Ek6LFmRmcg_BHMzrxoS'
+
 let _supabase: SupabaseClient | null = null
 
 export function getSupabase(): SupabaseClient {
   if (!_supabase) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    _supabase = createClient(url, key)
+    _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   }
   return _supabase
 }
