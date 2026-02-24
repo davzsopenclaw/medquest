@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -23,18 +24,15 @@ export default function LoginPage() {
 
     setLoading(true)
     try {
-      // In production: Supabase magic link
-      // const { error } = await supabase.auth.signInWithOtp({ 
-      //   email,
-      //   options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
-      // })
-      // if (error) throw error
-      
-      // For now: simulate
-      await new Promise(r => setTimeout(r, 800))
+      const { error: authError } = await supabase.auth.signInWithOtp({ 
+        email,
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
+      })
+      if (authError) throw authError
       setSent(true)
-    } catch {
-      setError('Something went wrong. Try again in a moment.')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Something went wrong. Try again in a moment.'
+      setError(message)
     } finally {
       setLoading(false)
     }
