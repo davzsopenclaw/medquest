@@ -280,7 +280,7 @@ SELECT
   p.questions_answered,
   CASE 
     WHEN p.questions_answered > 0 
-    THEN ROUND((p.questions_correct::FLOAT / p.questions_answered) * 100, 1)
+    THEN ROUND((p.questions_correct::NUMERIC / p.questions_answered) * 100, 1)
     ELSE 0 
   END AS accuracy_percent,
   RANK() OVER (ORDER BY p.xp DESC) AS rank
