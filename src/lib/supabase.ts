@@ -135,3 +135,4 @@ export const DIFFICULTY_CONFIG: Record<DifficultyTier, { label: string; color: s
   Tier2_Application: { label: 'Application', color: 'text-amber-600 bg-amber-50', xp: 20 },
   Tier3_Integration: { label: 'Integration', color: 'text-red-600 bg-red-50', xp: 35 },
 }
+// rebuild 1771939562
