@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { getSupabase } from '@/lib/supabase'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -12,7 +12,7 @@ export default function AuthCallbackPage() {
     const handleCallback = async () => {
       try {
         // Supabase automatically picks up the token from the URL hash
-        const { data, error: authError } = await supabase.auth.getSession()
+        const { data, error: authError } = await getSupabase().auth.getSession()
         
         if (authError) {
           setError(authError.message)
@@ -22,7 +22,7 @@ export default function AuthCallbackPage() {
         if (data.session) {
           // Create/update profile
           const user = data.session.user
-          await supabase.from('profiles').upsert({
+          await getSupabase().from('profiles').upsert({
             id: user.id,
             email: user.email!,
             display_name: user.email!.split('@')[0],
@@ -34,7 +34,7 @@ export default function AuthCallbackPage() {
           const params = new URLSearchParams(window.location.search)
           const code = params.get('code')
           if (code) {
-            const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+            const { error: exchangeError } = await getSupabase().auth.exchangeCodeForSession(code)
             if (exchangeError) {
               setError(exchangeError.message)
               return

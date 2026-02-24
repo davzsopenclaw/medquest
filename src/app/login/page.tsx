@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+import { getSupabase } from '@/lib/supabase'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -24,7 +24,7 @@ export default function LoginPage() {
 
     setLoading(true)
     try {
-      const { error: authError } = await supabase.auth.signInWithOtp({ 
+      const { error: authError } = await getSupabase().auth.signInWithOtp({ 
         email,
         options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
       })
