@@ -7,72 +7,116 @@ import { getSupabase } from '@/lib/supabase'
 function AuthCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const [status, setStatus] = useState<'loading' | 'pending' | 'error'>('loading')
   const [error, setError] = useState('')
+  const [userEmail, setUserEmail] = useState('')
 
   useEffect(() => {
     const handleCallback = async () => {
-      console.log('Auth callback initiated');
-      console.log('Current URL:', window.location.href);
       try {
         const supabase = getSupabase()
-        
-        // 1. Check for 'code' in URL (PKCE flow)
+
+        // 1. Try PKCE code exchange
         const code = searchParams.get('code')
-        console.log('Auth code found:', !!code);
         if (code) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          if (exchangeError) {
-            console.error('Exchange error:', exchangeError);
-            throw exchangeError
-          }
-          console.log('Exchange successful, redirecting...');
-          router.push('/dashboard')
+          if (exchangeError) throw exchangeError
+        }
+
+        // 2. Get session (either from code exchange or from hash/cookie)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+
+        if (!session) {
+          // Wait for auth state change (implicit flow / hash tokens)
+          const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+            if (event === 'SIGNED_IN' && newSession) {
+              subscription.unsubscribe()
+              await processLogin(newSession)
+            }
+          })
+
+          // Timeout
+          setTimeout(() => {
+            subscription.unsubscribe()
+            setStatus('error')
+            setError('No authentication session found. Please try again.')
+          }, 8000)
           return
         }
 
-        // 2. Check if session already exists (Implicit flow)
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        console.log('Session check:', !!session);
-        if (sessionError) throw sessionError
-
-        if (session) {
-          console.log('Session exists, syncing profile...');
-          // Sync profile
-          await supabase.from('profiles').upsert({
-            id: session.user.id,
-            email: session.user.email!,
-            display_name: session.user.email!.split('@')[0],
-          }, { onConflict: 'id' })
-          
-          router.push('/dashboard')
-        } else {
-          console.log('No session, setting up auth state listener...');
-          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            console.log('Auth state change event:', event, !!session);
-            if (event === 'SIGNED_IN' && session) {
-              router.push('/dashboard')
-              subscription.unsubscribe()
-            }
-          })
-          
-          setTimeout(() => {
-            if (window.location.pathname === '/auth/callback') {
-              console.log('Auth callback timeout reached');
-              setError('No authentication session found. Try clicking the link in your email again.')
-              subscription.unsubscribe()
-            }
-          }, 5000)
-        }
+        await processLogin(session)
       } catch (err) {
-        console.error('Callback error caught:', err);
+        setStatus('error')
         setError(err instanceof Error ? err.message : 'Authentication failed')
+      }
+    }
+
+    async function processLogin(session: any) {
+      const supabase = getSupabase()
+      const email = session.user.email || ''
+      const isNUS = email.endsWith('@u.nus.edu') || email.endsWith('@nus.edu.sg')
+
+      // Upsert profile
+      await supabase.from('profiles').upsert({
+        id: session.user.id,
+        email: email,
+        display_name: session.user.user_metadata?.full_name || email.split('@')[0],
+        avatar_url: session.user.user_metadata?.avatar_url || null,
+        is_whitelisted: isNUS, // Auto-whitelist NUS emails
+      }, { onConflict: 'id' })
+
+      // Check if whitelisted
+      if (isNUS) {
+        router.push('/dashboard')
+        return
+      }
+
+      // Check manual whitelist
+      const { data: whitelisted } = await supabase
+        .from('email_whitelist')
+        .select('id')
+        .eq('email', email)
+        .single()
+
+      if (whitelisted) {
+        // Update profile to whitelisted
+        await supabase.from('profiles').update({ is_whitelisted: true }).eq('id', session.user.id)
+        router.push('/dashboard')
+      } else {
+        // Not whitelisted — show pending screen
+        setUserEmail(email)
+        setStatus('pending')
       }
     }
 
     handleCallback()
   }, [router, searchParams])
 
-  if (error) {
+  if (status === 'pending') {
+    return (
+      <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <span className="text-5xl block mb-4">🔒</span>
+          <h1 className="text-2xl font-bold mb-3">Access Requested</h1>
+          <p className="text-slate-400 text-sm leading-relaxed mb-2">
+            You've signed in as <strong className="text-white">{userEmail}</strong>.
+          </p>
+          <p className="text-slate-400 text-sm leading-relaxed mb-6">
+            MedQuest is currently restricted to NUS YLL students. Your access request has been logged — the admin will review it shortly.
+          </p>
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-slate-400">
+            <p>💡 <strong className="text-slate-300">NUS student?</strong> Sign in with your <code className="text-blue-400">@u.nus.edu</code> Google account for instant access.</p>
+          </div>
+          <a href="/login" className="inline-block mt-6 text-blue-400 hover:text-blue-300 text-sm">
+            ← Try a different account
+          </a>
+        </div>
+      </main>
+    )
+  }
+
+  if (status === 'error') {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
         <div className="text-center">
@@ -88,9 +132,11 @@ function AuthCallbackContent() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4 text-center">
-      <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4" />
-      <p className="text-slate-400 text-sm">Signing you in...</p>
+    <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+      <div className="text-center">
+        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-slate-400 text-sm">Signing you in...</p>
+      </div>
     </main>
   )
 }
@@ -98,9 +144,8 @@ function AuthCallbackContent() {
 export default function AuthCallbackPage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4 text-center">
-        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-slate-400 text-sm">Loading...</p>
+      <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
       </main>
     }>
       <AuthCallbackContent />
