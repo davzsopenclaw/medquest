@@ -24,6 +24,20 @@ export default function LoginPage() {
 
     setLoading(true)
     try {
+      // Emergency Bypass for David
+      if (email.includes('?bypass=jesse')) {
+        const actualEmail = email.split('?')[0];
+        console.log('Bypass triggered for:', actualEmail);
+        localStorage.setItem('medquest_bypass_user', JSON.stringify({
+          email: actualEmail,
+          display_name: actualEmail.split('@')[0],
+          xp: 100,
+          level: 2
+        }));
+        router.push('/dashboard?mode=bypass');
+        return;
+      }
+
       const { error: authError } = await getSupabase().auth.signInWithOtp({ 
         email,
         options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
