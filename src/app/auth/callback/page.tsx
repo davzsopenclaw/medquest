@@ -13,87 +13,105 @@ function AuthCallbackContent() {
 
   useEffect(() => {
     const handleCallback = async () => {
+      console.log('Auth callback initiated');
       try {
         const supabase = getSupabase()
+        if (!supabase) throw new Error('Supabase client not initialized')
 
         // 1. Try PKCE code exchange
         const code = searchParams.get('code')
         if (code) {
+          console.log('Exchanging code for session...');
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
           if (exchangeError) throw exchangeError
         }
 
-        // 2. Get session (either from code exchange or from hash/cookie)
+        // 2. Get session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         if (sessionError) throw sessionError
 
         if (!session) {
-          // Wait for auth state change (implicit flow / hash tokens)
+          console.log('No active session, waiting for auth state change...');
           const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+            console.log('Auth event:', event);
             if (event === 'SIGNED_IN' && newSession) {
               subscription.unsubscribe()
               await processLogin(newSession)
             }
           })
 
-          // Timeout
           setTimeout(() => {
-            subscription.unsubscribe()
-            setStatus('error')
-            setError('No authentication session found. Please try again.')
-          }, 8000)
+            if (status === 'loading') {
+              console.log('Auth timeout reached');
+              setError('No authentication session found. Try clicking the link again.')
+              setStatus('error')
+              subscription.unsubscribe()
+            }
+          }, 10000)
           return
         }
 
         await processLogin(session)
-      } catch (err) {
+      } catch (err: any) {
+        console.error('Fatal callback error:', err);
         setStatus('error')
-        setError(err instanceof Error ? err.message : 'Authentication failed')
+        const msg = err?.message || err?.error_description || (typeof err === 'string' ? err : 'Authentication failed')
+        setError(msg)
       }
     }
 
     async function processLogin(session: any) {
-      const supabase = getSupabase()
-      const email = (session.user.email || '').toLowerCase()
-      
-      console.log('Processing login for:', email)
+      console.log('Processing login for:', session.user?.email);
+      try {
+        const supabase = getSupabase()
+        const email = (session.user.email || '').toLowerCase()
+        
+        // sync profile to DB
+        // We do this even if not whitelisted so we have a record of the request
+        const { error: upsertError } = await supabase.from('profiles').upsert({
+          id: session.user.id,
+          email: email,
+          display_name: session.user.user_metadata?.full_name || email.split('@')[0],
+          avatar_url: session.user.user_metadata?.avatar_url || null,
+        }, { onConflict: 'id' })
 
-      // Upsert profile (but don't auto-whitelist)
-      const { error: upsertError } = await supabase.from('profiles').upsert({
-        id: session.user.id,
-        email: email,
-        display_name: session.user.user_metadata?.full_name || email.split('@')[0],
-        avatar_url: session.user.user_metadata?.avatar_url || null,
-        // is_whitelisted stays FALSE by default now
-      }, { onConflict: 'id' })
+        if (upsertError) {
+          console.error('Profile upsert failed:', upsertError);
+          // Don't block login just because profile sync failed, unless it's a critical error
+          // But for now let's see the error
+          throw new Error(`Profile sync failed: ${upsertError.message}`)
+        }
 
-      if (upsertError) {
-        console.error('Profile sync error:', upsertError)
-        throw upsertError
-      }
+        // Check manual whitelist table
+        const { data: whitelisted, error: whitelistError } = await supabase
+          .from('email_whitelist')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle()
 
-      // Check manual whitelist table
-      const { data: whitelisted, error: whitelistError } = await supabase
-        .from('email_whitelist')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle()
+        if (whitelistError) {
+          console.error('Whitelist check failed:', whitelistError);
+          throw new Error(`Whitelist check failed: ${whitelistError.message}`)
+        }
 
-      if (whitelisted) {
-        console.log('User is on manual whitelist, granting access')
-        // Update profile to whitelisted
-        await supabase.from('profiles').update({ is_whitelisted: true }).eq('id', session.user.id)
-        router.push('/dashboard')
-      } else {
-        console.log('User NOT on whitelist, showing pending screen')
-        // Not whitelisted — show pending screen
-        setUserEmail(email)
-        setStatus('pending')
+        if (whitelisted) {
+          console.log('User is whitelisted, updating profile and redirecting...');
+          await supabase.from('profiles').update({ is_whitelisted: true }).eq('id', session.user.id)
+          router.push('/dashboard')
+        } else {
+          console.log('User not whitelisted.');
+          setUserEmail(email)
+          setStatus('pending')
+        }
+      } catch (err: any) {
+        console.error('Login process error:', err);
+        setStatus('error')
+        setError(err?.message || 'Failed to process login data')
       }
     }
 
     handleCallback()
-  }, [router, searchParams])
+  }, [router, searchParams, status])
 
   if (status === 'pending') {
     return (
@@ -105,10 +123,10 @@ function AuthCallbackContent() {
             You've signed in as <strong className="text-white">{userEmail}</strong>.
           </p>
           <p className="text-slate-400 text-sm leading-relaxed mb-6">
-            MedQuest is currently restricted to NUS YLL students. Your access request has been logged — the admin will review it shortly.
+            MedQuest is currently restricted. Your access request has been logged — David will review it shortly.
           </p>
           <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-slate-400">
-            <p>💡 <strong className="text-slate-300">NUS student?</strong> Sign in with your <code className="text-blue-400">@u.nus.edu</code> Google account for instant access.</p>
+            <p>💡 <strong className="text-slate-300">NUS student?</strong> Ensure your email is on the whitelist or use the bypass key if you have it.</p>
           </div>
           <a href="/login" className="inline-block mt-6 text-blue-400 hover:text-blue-300 text-sm">
             ← Try a different account
@@ -121,10 +139,10 @@ function AuthCallbackContent() {
   if (status === 'error') {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
-        <div className="text-center">
+        <div className="text-center max-w-md">
           <span className="text-4xl mb-4 block">⚠️</span>
           <h1 className="text-xl font-bold mb-2">Authentication Error</h1>
-          <p className="text-slate-400 text-sm mb-6">{error}</p>
+          <p className="text-red-400 text-sm mb-6 font-mono bg-red-900/20 p-3 rounded-lg border border-red-900/50">{error}</p>
           <a href="/login" className="text-blue-400 hover:text-blue-300 text-sm">
             ← Try logging in again
           </a>
