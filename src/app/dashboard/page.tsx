@@ -79,7 +79,7 @@ export default function DashboardPage() {
     )
   }
 
-  const p = profile || { display_name: 'User', xp: 0, level: 1, streak_current: 0, questions_answered: 0, questions_correct: 0 }
+  const p = profile || { display_name: 'User', xp: 0, level: 1, streak_current: 0, questions_answered: 0, questions_correct: 0, is_admin: false }
   const accuracy = p.questions_answered > 0 ? Math.round((p.questions_correct / p.questions_answered) * 100) : 0
 
   return (
@@ -90,6 +90,11 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <span className="text-xl">🏥</span>
             <span className="font-bold">MedQuest</span>
+            {p.is_admin && (
+              <Link href="/admin/whitelist" className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ml-2">
+                Admin
+              </Link>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-orange-400 text-sm font-semibold">

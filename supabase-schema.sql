@@ -45,6 +45,13 @@ CREATE TABLE email_whitelist (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE email_whitelist ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admins can manage whitelist" ON email_whitelist 
+FOR ALL USING (
+  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = TRUE)
+);
+
 -- =============================================
 -- QUESTION BANK
 -- =============================================
