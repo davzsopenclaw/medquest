@@ -11,23 +11,32 @@ function AuthCallbackContent() {
 
   useEffect(() => {
     const handleCallback = async () => {
+      console.log('Auth callback initiated');
+      console.log('Current URL:', window.location.href);
       try {
         const supabase = getSupabase()
         
         // 1. Check for 'code' in URL (PKCE flow)
         const code = searchParams.get('code')
+        console.log('Auth code found:', !!code);
         if (code) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          if (exchangeError) throw exchangeError
+          if (exchangeError) {
+            console.error('Exchange error:', exchangeError);
+            throw exchangeError
+          }
+          console.log('Exchange successful, redirecting...');
           router.push('/dashboard')
           return
         }
 
         // 2. Check if session already exists (Implicit flow)
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        console.log('Session check:', !!session);
         if (sessionError) throw sessionError
 
         if (session) {
+          console.log('Session exists, syncing profile...');
           // Sync profile
           await supabase.from('profiles').upsert({
             id: session.user.id,
@@ -37,23 +46,25 @@ function AuthCallbackContent() {
           
           router.push('/dashboard')
         } else {
-          // If we reach here, no session and no code found
-          // Could be due to hash fragments (Implicit flow) not being in searchParams
-          // Wait briefly for Supabase listener
+          console.log('No session, setting up auth state listener...');
           const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            console.log('Auth state change event:', event, !!session);
             if (event === 'SIGNED_IN' && session) {
               router.push('/dashboard')
               subscription.unsubscribe()
             }
           })
           
-          // Timeout if nothing happens
           setTimeout(() => {
-            setError('No authentication session found. Try clicking the link in your email again.')
-            subscription.unsubscribe()
+            if (window.location.pathname === '/auth/callback') {
+              console.log('Auth callback timeout reached');
+              setError('No authentication session found. Try clicking the link in your email again.')
+              subscription.unsubscribe()
+            }
           }, 5000)
         }
       } catch (err) {
+        console.error('Callback error caught:', err);
         setError(err instanceof Error ? err.message : 'Authentication failed')
       }
     }
