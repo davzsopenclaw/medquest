@@ -55,47 +55,37 @@ function AuthCallbackContent() {
     async function processLogin(session: any) {
       const supabase = getSupabase()
       const email = (session.user.email || '').toLowerCase()
-      const isNUS = email.endsWith('@u.nus.edu') || 
-                    email.endsWith('@nus.edu.sg') || 
-                    email.endsWith('@comp.nus.edu.sg') ||
-                    email.endsWith('@u.nus.edu.sg')
+      
+      console.log('Processing login for:', email)
 
-      console.log('Processing login for:', email, 'isNUS:', isNUS)
-
-      // Upsert profile
+      // Upsert profile (but don't auto-whitelist)
       const { error: upsertError } = await supabase.from('profiles').upsert({
         id: session.user.id,
         email: email,
         display_name: session.user.user_metadata?.full_name || email.split('@')[0],
         avatar_url: session.user.user_metadata?.avatar_url || null,
-        is_whitelisted: isNUS, // Auto-whitelist NUS emails
+        // is_whitelisted stays FALSE by default now
       }, { onConflict: 'id' })
 
       if (upsertError) {
         console.error('Profile sync error:', upsertError)
-        // If it's an RLS error, we might still want to proceed if isNUS is true
-        // But better to fail and fix the policy
         throw upsertError
       }
 
-      // Check if whitelisted
-      if (isNUS) {
-        router.push('/dashboard')
-        return
-      }
-
-      // Check manual whitelist
-      const { data: whitelisted } = await supabase
+      // Check manual whitelist table
+      const { data: whitelisted, error: whitelistError } = await supabase
         .from('email_whitelist')
         .select('id')
         .eq('email', email)
-        .single()
+        .maybeSingle()
 
       if (whitelisted) {
+        console.log('User is on manual whitelist, granting access')
         // Update profile to whitelisted
         await supabase.from('profiles').update({ is_whitelisted: true }).eq('id', session.user.id)
         router.push('/dashboard')
       } else {
+        console.log('User NOT on whitelist, showing pending screen')
         // Not whitelisted — show pending screen
         setUserEmail(email)
         setStatus('pending')
