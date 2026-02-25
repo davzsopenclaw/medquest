@@ -319,6 +319,7 @@ ALTER TABLE daily_recommendations ENABLE ROW LEVEL SECURITY;
 -- Profiles: users see their own, leaderboard sees all
 CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
 -- Answer attempts: own only
 CREATE POLICY "Users manage own attempts" ON answer_attempts FOR ALL USING (auth.uid() = user_id);

@@ -54,17 +54,29 @@ function AuthCallbackContent() {
 
     async function processLogin(session: any) {
       const supabase = getSupabase()
-      const email = session.user.email || ''
-      const isNUS = email.endsWith('@u.nus.edu') || email.endsWith('@nus.edu.sg')
+      const email = (session.user.email || '').toLowerCase()
+      const isNUS = email.endsWith('@u.nus.edu') || 
+                    email.endsWith('@nus.edu.sg') || 
+                    email.endsWith('@comp.nus.edu.sg') ||
+                    email.endsWith('@u.nus.edu.sg')
+
+      console.log('Processing login for:', email, 'isNUS:', isNUS)
 
       // Upsert profile
-      await supabase.from('profiles').upsert({
+      const { error: upsertError } = await supabase.from('profiles').upsert({
         id: session.user.id,
         email: email,
         display_name: session.user.user_metadata?.full_name || email.split('@')[0],
         avatar_url: session.user.user_metadata?.avatar_url || null,
         is_whitelisted: isNUS, // Auto-whitelist NUS emails
       }, { onConflict: 'id' })
+
+      if (upsertError) {
+        console.error('Profile sync error:', upsertError)
+        // If it's an RLS error, we might still want to proceed if isNUS is true
+        // But better to fail and fix the policy
+        throw upsertError
+      }
 
       // Check if whitelisted
       if (isNUS) {
