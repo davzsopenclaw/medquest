@@ -8,9 +8,18 @@ import { getSupabase } from '@/lib/supabase'
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
+  const [secretKey, setSecretKey] = useState('')
+  const [clickCount, setClickCount] = useState(0)
+  const [showSecret, setShowSecret] = useState(false)
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const handleLogoClick = () => {
+    const newCount = clickCount + 1
+    setClickCount(newCount)
+    if (newCount >= 5) setShowSecret(true)
+  }
 
   const isAllowedEmail = (e: string) =>
     e.endsWith('@u.nus.edu') || e.endsWith('@nus.edu.sg') || e.endsWith('@comp.nus.edu.sg')
@@ -19,6 +28,18 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
 
+    // Bypass check
+    if (showSecret && secretKey === 'jesse') {
+      localStorage.setItem('medquest_bypass_user', JSON.stringify({
+        email: email,
+        display_name: email.split('@')[0],
+        xp: 100,
+        level: 2
+      }));
+      router.push('/dashboard?mode=bypass');
+      return;
+    }
+
     if (!isAllowedEmail(email)) {
       setError('Please use your NUS email (@u.nus.edu). Contact David for manual whitelisting if you need access with a different email.')
       return
@@ -26,20 +47,6 @@ export default function LoginPage() {
 
     setLoading(true)
     try {
-      // Emergency Bypass for David
-      if (email.includes('?bypass=jesse')) {
-        const actualEmail = email.split('?')[0];
-        console.log('Bypass triggered for:', actualEmail);
-        localStorage.setItem('medquest_bypass_user', JSON.stringify({
-          email: actualEmail,
-          display_name: actualEmail.split('@')[0],
-          xp: 100,
-          level: 2
-        }));
-        router.push('/dashboard?mode=bypass');
-        return;
-      }
-
       const { error: authError } = await getSupabase().auth.signInWithOtp({ 
         email,
         options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
@@ -59,11 +66,14 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-6 group">
+          <button 
+            onClick={handleLogoClick}
+            className="inline-flex items-center gap-2 mb-6 group outline-none"
+          >
             <span className="text-3xl group-hover:scale-110 transition-transform">🏥</span>
-            <span className="font-black text-2xl tracking-tight">MedQuest</span>
+            <span className="font-black text-2xl tracking-tight text-white">MedQuest</span>
             <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">YLL</span>
-          </Link>
+          </button>
           <h1 className="text-2xl font-bold mt-4">Welcome back, future doctor</h1>
           <p className="text-slate-400 mt-2 text-sm leading-relaxed">
             Sign in with your NUS email. No password needed — we'll send a magic link.
@@ -90,6 +100,21 @@ export default function LoginPage() {
                 />
               </div>
 
+              {showSecret && (
+                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                  <label className="block text-sm font-medium text-blue-400 mb-2">
+                    Secret Key
+                  </label>
+                  <input
+                    type="password"
+                    value={secretKey}
+                    onChange={(e) => setSecretKey(e.target.value)}
+                    placeholder="Enter bypass key..."
+                    className="w-full bg-blue-900/20 border border-blue-500/30 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 placeholder-blue-900 transition-all text-blue-100"
+                  />
+                </div>
+              )}
+
               {error && (
                 <div className="bg-red-950/80 border border-red-800 text-red-300 rounded-xl px-4 py-3 text-sm flex items-start gap-2">
                   <span className="shrink-0 mt-0.5">⚠️</span>
@@ -108,11 +133,10 @@ export default function LoginPage() {
                     Sending...
                   </span>
                 ) : (
-                  'Send Magic Link →'
+                  showSecret ? 'Bypass Login →' : 'Send Magic Link →'
                 )}
               </button>
               
-              {/* Demo access */}
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-white/10"></div>
